@@ -1,20 +1,5 @@
-# OnePlus 13 dodge Android device tree
+# OnePlus 15 infiniti OrangeFox device tree
 
-## Working
-
-- [X] Display
-- [X] Touch (Even in FastbootD)
-- [X] Decryption
-- [X] Flashing
-- [X] Backup & Restore
-- [X] MTP/OTG Storage
-- [X] ADB/FastbootD
-- [X] Factory Reset
-- [X] Vibrator
-- [X] Display & Vibration Settings
-
-## Not working
-- [ ] ????????
 
 # How To Build
 
@@ -31,12 +16,12 @@ cd sync
 cd ~/fox_14.1/device
 mkdir -p oneplus
 cd oneplus
-git clone https://gitlab.com/OrangeFox/device/dodge.git dodge
+git clone https://github.com/koaaN/android_device_infiniti-orangefox infiniti
 ```
 ### BUILD!
 ```
 cd ~/fox_14.1
 source build/envsetup.sh
-lunch twrp_dodge-ap2a-eng
+lunch twrp_infiniti-ap2a-eng
 mka adbd recoveryimage
 ```
