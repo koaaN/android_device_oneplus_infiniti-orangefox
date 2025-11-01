@@ -1,9 +1,9 @@
 <!--
     Input:
         system/libhidl/vintfdata/manifest.xml
-        device/qcom/sun/framework_manifest.xml
+        device/qcom/canoe/framework_manifest.xml
 -->
-<manifest version="8.0" type="framework">
+<manifest version="9.0" type="framework">
     <hal format="hidl" max-level="6">
         <name>android.frameworks.displayservice</name>
         <transport>hwbinder</transport>
@@ -55,5 +55,6 @@
         <version>33</version>
         <version>34</version>
         <version>35</version>
+        <version>36</version>
     </system-sdk>
 </manifest>
