@@ -1,0 +1,8 @@
+#Junwei.You@BSP.Security.Basic, 2023/07/27, mv strongbox hal from vendor to odm partition
+service vendor.keymint-strongbox /odm/bin/hw/android.hardware.security.keymint-service.strongbox-nxp
+    class early_hal
+    user root
+    group root nfc drmrpc
+    capabilities WAKE_ALARM
+    interface aidl android.hardware.security.sharedsecret.ISharedSecret/strongbox
+    seclabel u:r:recovery:s0

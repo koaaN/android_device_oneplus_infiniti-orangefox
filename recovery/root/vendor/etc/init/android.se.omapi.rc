@@ -1,0 +1,6 @@
+service vendor.se_omapi /vendor/bin/hw/android.se.omapi.fake
+    class hal
+    user root
+    group root
+    interface aidl android.se.omapi.ISecureElementService/default
+    seclabel u:r:recovery:s0

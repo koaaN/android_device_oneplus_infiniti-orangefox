@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/twrp/FakeOmapi/android.se.omapi.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.se.omapi</name>
+        <fqname>ISecureElementService/default</fqname>
+    </hal>
+</manifest>

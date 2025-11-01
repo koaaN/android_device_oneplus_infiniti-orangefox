@@ -1,0 +1,8 @@
+#Junwei.You@BSP.Security.Basic, 2023/08/30, mv weaver hal from vendor to odm partition
+#Junwei.You@BSP.Security.Basic, 2023/10/25, add WAKE_ALARM capabilities for weaver hal
+service vendor.weaver_nxp /odm/bin/hw/android.hardware.weaver-service.nxp
+    class hal
+    user root
+    group root drmrpc
+    capabilities WAKE_ALARM
+    seclabel u:r:recovery:s0
