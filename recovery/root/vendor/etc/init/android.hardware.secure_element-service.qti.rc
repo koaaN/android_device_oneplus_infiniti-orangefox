@@ -1,4 +1,4 @@
-service vendor.secure_element /odm/bin/hw/android.hardware.secure_element-service.qti
+service vendor.secure_element /vendor/bin/hw/android.hardware.secure_element-service.qti
     class hal
     user root
     group nfc root
