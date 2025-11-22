@@ -15,6 +15,7 @@
 
 ## Not working
 - [ ] Flashlight
+- [ ] Root-installer (6.12 kernel not supported for now)
 
 # How To Build
 
