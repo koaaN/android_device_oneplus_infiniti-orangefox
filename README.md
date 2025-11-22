@@ -12,9 +12,10 @@
 - [X] Factory Reset
 - [X] Vibrator
 - [X] Display & Vibration Settings
+- [X] Flashlight
 
 ## Not working
-- [ ] Flashlight
+- [ ] Root-installer (6.12 kernel not supported yet)
 
 # How To Build
 
