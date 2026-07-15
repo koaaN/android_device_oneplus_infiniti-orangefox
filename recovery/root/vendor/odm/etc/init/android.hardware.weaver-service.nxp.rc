@@ -5,4 +5,5 @@ service vendor.weaver_nxp /odm/bin/hw/android.hardware.weaver-service.nxp
     user root
     group root drmrpc
     capabilities WAKE_ALARM
+    disabled
     seclabel u:r:recovery:s0

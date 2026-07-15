@@ -1,0 +1,6 @@
+service vendor.nfc_hal_service /odm/bin/hw/android.hardware.nfc-service.nxp
+    class hal
+    user nfc
+    group nfc drmrpc system
+    disabled
+    seclabel u:r:recovery:s0

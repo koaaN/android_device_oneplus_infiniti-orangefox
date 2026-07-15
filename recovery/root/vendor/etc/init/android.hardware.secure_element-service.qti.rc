@@ -2,4 +2,5 @@ service vendor.secure_element /vendor/bin/hw/android.hardware.secure_element-ser
     class hal
     user root
     group nfc root
+    disabled
     seclabel u:r:recovery:s0

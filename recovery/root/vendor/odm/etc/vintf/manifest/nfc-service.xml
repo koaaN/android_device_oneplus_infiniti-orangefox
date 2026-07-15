@@ -1,0 +1,11 @@
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.nfc</name>
+        <version>2</version>
+        <fqname>INfc/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.nxp.nxpnfc_aidl</name>
+        <fqname>INxpNfc/default</fqname>
+    </hal>
+</manifest>

@@ -29,12 +29,29 @@ import /init.recovery.wifi.rc
 
 on early-init
     start vendor.gatekeeper_default
+    mount none /vendor/odm /odm bind
 
 service post-boot-script /system/bin/sh -c /vendor/bin/init.kernel.post_boot-canoe_default_6_2.sh
     user root
     group root
     oneshot
     seclabel u:r:recovery:s0
+
+# The eSE drivers are loaded by TW_LOAD_VENDOR_MODULES, and the Secure Element
+# HAL uses the NFC HAL to power the chip. Start each dependency in order.
+service vendor.crypto-hal-delay /system/bin/sh -c "sleep 1; setprop vendor.crypto_hal.start_se 1; sleep 2; if grep -q '^/dev/block/.* /odm ' /proc/mounts; then umount -l /odm; fi; setprop vendor.crypto_hal.ready 1"
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0
+
+on property:vendor.crypto_hal.start_se=1
+    start vendor.secure_element
+
+on property:vendor.crypto_hal.ready=1
+    start vendor.weaver_nxp
+    start vendor.keymint-strongbox
 
 on early-fs
     write /proc/sys/walt/sched_lib_name "recovery,Updater,updater,update_engine_sideload"
@@ -58,6 +75,8 @@ on fs
     write /proc/sys/kernel/firmware_config/force_sysfs_fallback 1
 
 on property:twrp.modules.loaded=true
+    start vendor.nfc_hal_service
+    start vendor.crypto-hal-delay
     # Mount firmware
     mkdir /firmware
     mount vfat /dev/block/bootdevice/by-name/modem${ro.boot.slot_suffix} /firmware ro
@@ -76,5 +95,4 @@ on property:hwservicemanager.ready=true
 
 on property:vendor.sys.listeners.registered=true
     start vendor.ssgtzd
-    start vendor.keymint-strongbox
     start vendor.oplus.vibrator
