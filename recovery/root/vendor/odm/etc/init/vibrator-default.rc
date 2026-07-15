@@ -40,10 +40,11 @@ on boot
     chown system system /sys/class/leds/vibrator/f0_data
     chown system system /sys/class/leds/vibrator/rtp_going
 #endif /* OPLUS_FEATURE_CHG_BASIC */
-service vendor.oplus.vibrator /odm/bin/hw/vendor.oplus.hardware.vibrator-service
+# Use the compatible QTI AIDL HAL copied into the recovery ramdisk. Keeping it
+# under /system makes it independent of vendor/ODM mount timing.
+service vendor.oplus.vibrator /system/bin/vendor.qti.hardware.vibrator.service
     class late_start
     user root
     group root input
-    setenv RICHTAP_DEVICE_PATH /dev/awinic_haptic
-    setenv ENV_RICHTAP_CONFIG_PATH /odm/etc/aac_richtap.config
+    setenv LD_LIBRARY_PATH /system/lib64/qti_vibrator:/system/lib64
     seclabel u:r:recovery:s0
