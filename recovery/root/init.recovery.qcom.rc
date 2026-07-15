@@ -71,10 +71,15 @@ on property:twrp.modules.loaded=true
 on property:ro.crypto.state=encrypted && property:ro.boot.dynamic_partitions=true
     start prepdecrypt.vendor
 
-on property:hwservicemanager.ready=true
+# Recovery has no Android framework boot sequence.  Set this during init so
+# Weaver is ready regardless of when hwservicemanager publishes its property.
+on init
     setprop sys.boot_completed 1
 
 on property:vendor.sys.listeners.registered=true
+    # Weaver rejects requests until Android reports boot completion.  Set this
+    # here as a safeguard so recovery decryption cannot race service startup.
+    setprop sys.boot_completed 1
     start vendor.ssgtzd
     start vendor.keymint-strongbox
     start vendor.oplus.vibrator
