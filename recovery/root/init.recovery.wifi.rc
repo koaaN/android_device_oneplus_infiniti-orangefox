@@ -1,14 +1,21 @@
 on property:post.decrypt.modules=true
+    setprop sys.fox.wlan.up 0
     chmod 222 /sys/bus/platform/drivers/cnss2/b0000000.qcom,cnss-peach/fs_ready
     write /sys/bus/platform/drivers/cnss2/b0000000.qcom,cnss-peach/fs_ready 1
-    wait /sys/class/net/wlan0 10
-    write /dev/kmsg "Interface wlan0 found"
-    setprop wifi.driver.ready true
+    start fox-wlan-ready
 
 on property:wifi.driver.ready=true
     mkdir /tmp/recovery 0777 root root
     mkdir /tmp/recovery/sockets 0777 root root
+    start wpa_supplicant
 
 service wpa_supplicant /system/bin/wpa_supplicant -Dnl80211 -iwlan0 -dd -O/tmp/recovery/sockets -c/vendor/etc/wifi/wpa_supplicant.conf
     disabled
+    seclabel u:r:recovery:s0
+
+service fox-wlan-ready /system/bin/sh -c "until test -e /sys/class/net/wlan0; do sleep 1; done; setprop wifi.driver.ready true"
+    disabled
+    oneshot
+    user root
+    group root
     seclabel u:r:recovery:s0
