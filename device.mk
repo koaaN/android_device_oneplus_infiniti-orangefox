@@ -21,7 +21,8 @@ PRODUCT_USE_DYNAMIC_PARTITIONS := true
 PRODUCT_PACKAGES += \
     lpflash \
     lpmake \
-    lpunpack
+    lpunpack \
+    fox_thermal_guard
 
 # OTA certs
 PRODUCT_EXTRA_RECOVERY_KEYS += \

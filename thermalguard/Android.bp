@@ -1,0 +1,11 @@
+cc_binary {
+    name: "fox_thermal_guard",
+    recovery: true,
+    srcs: ["ThermalGuard.cpp"],
+    shared_libs: ["libbase"],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}
