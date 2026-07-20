@@ -37,19 +37,36 @@ service post-boot-script /system/bin/sh -c /vendor/bin/init.kernel.post_boot-can
     oneshot
     seclabel u:r:recovery:s0
 
+service fox-thermal-guard /system/bin/fox_thermal_guard
+    class core
+    user root
+    group root
+    disabled
+    seclabel u:r:recovery:s0
+
+# Keep thermal monitoring outside the decryption critical path.
+on property:twrp.decrypt.done=true
+    start fox-thermal-guard
+
+on property:ro.crypto.state=unencrypted
+    start fox-thermal-guard
+
 # The eSE drivers are loaded by TW_LOAD_VENDOR_MODULES, and the Secure Element
 # HAL uses the NFC HAL to power the chip. Start each dependency in order.
-service vendor.crypto-hal-delay /system/bin/sh -c "sleep 1; setprop vendor.crypto_hal.start_se 1; sleep 2; if grep -q '^/dev/block/.* /odm ' /proc/mounts; then umount -l /odm; fi; setprop vendor.crypto_hal.ready 1"
+service vendor.crypto-hal-delay /system/bin/sh -c "if grep -q '^/dev/block/.* /odm ' /proc/mounts; then umount -l /odm; fi; if grep -q '^/dev/block/.* /vendor ' /proc/mounts; then umount -l /vendor; fi; setprop vendor.crypto_hal.start_nfc 1; sleep 1; setprop vendor.crypto_hal.start_se 1; sleep 1; setprop vendor.crypto_hal.start_clients 1; sleep 1; setprop vendor.crypto_hal.ready 1"
     user root
     group root
     disabled
     oneshot
     seclabel u:r:recovery:s0
 
+on property:vendor.crypto_hal.start_nfc=1
+    start vendor.nfc_hal_service
+
 on property:vendor.crypto_hal.start_se=1
     start vendor.secure_element
 
-on property:vendor.crypto_hal.ready=1
+on property:vendor.crypto_hal.start_clients=1
     start vendor.weaver_nxp
     start vendor.keymint-strongbox
 
@@ -75,7 +92,6 @@ on fs
     write /proc/sys/kernel/firmware_config/force_sysfs_fallback 1
 
 on property:twrp.modules.loaded=true
-    start vendor.nfc_hal_service
     start vendor.crypto-hal-delay
     # Mount firmware
     mkdir /firmware
