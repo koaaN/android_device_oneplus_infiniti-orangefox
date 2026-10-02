@@ -36,4 +36,5 @@
 # Removable storage
 /storage        auto    /data/media/0                  		                            flags=display="Internal Storage";backup=1;usermrf;fsflags="bind,utf8";removable
 /usb_otg        vfat    /dev/block/sdg1                            /dev/block/sdg           flags=display="USB-Storage";fsflags=utf8;storage;wipeingui;removable
+/A ext4 /dev/block/by-name/A flags=display="virtualSD-A";fsflags=utf8;storage;wipeingui;removable
 #

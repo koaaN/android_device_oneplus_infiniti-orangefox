@@ -1,0 +1,162 @@
+name: OFRP Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      DEVICE_TREE_URL:
+        description: "Device tree url"
+        required: false
+        default: "https://github.com/hinm163/android_device_oneplus_infiniti-orangefox"
+      DEVICE_TREE_BRANCH:
+        description: "Device tree branch"
+        required: false
+        default: "R12"
+      DEVICE_PATH:
+        description: "Device path device/"
+        required: false
+        default: "oneplus/infiniti"
+      DEVICE_NAME:
+        description: "Device name"
+        required: false
+        default: "infiniti"
+      LUNCH_TARGET:
+        description: "lunch twrp_ (default same as device name)"
+        required: false
+        default: ""
+      BUILD_PARTITION:
+        description: "Build partition"
+        required: false
+        default: "recovery"
+
+      OF_SYNC_REPO:
+        description: "OrangeFox sync repo URL"
+        required: false
+        default: "https://gitlab.com/OrangeFox/sync.git"
+      OF_BRANCH:
+        description: "OrangeFox sync branch(12.1/14.1 etc.)"
+        required: false
+        default: "14.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Show build info
+      run: |
+        if [ -n "${{ github.event.inputs.LUNCH_TARGET }}" ]; then
+          echo "LUNCH_TARGET=${{ github.event.inputs.LUNCH_TARGET }}" >> "$GITHUB_ENV"
+        else
+          echo "LUNCH_TARGET=${{ github.event.inputs.DEVICE_NAME }}" >> "$GITHUB_ENV"
+        fi
+        {
+          echo 'BUILD_INFO<<EOF'
+          echo
+          echo Device tree url: ${{ github.event.inputs.DEVICE_TREE_URL }}
+          echo Device tree branch: ${{ github.event.inputs.DEVICE_TREE_BRANCH }}
+          echo Device path: ${{ github.event.inputs.DEVICE_PATH }}
+          echo Device name: ${{ github.event.inputs.DEVICE_NAME }}
+          echo Lunch target: ${{ env.LUNCH_TARGET }}
+          echo Build target: ${{ github.event.inputs.BUILD_PARTITION }}.img
+          echo Build date: `date`
+          echo OrangeFox repo: ${{ github.event.inputs.OF_SYNC_REPO }}
+          echo OrangeFox branch: ${{ github.event.inputs.OF_BRANCH }}
+          echo
+          echo EOF
+        } >> "$GITHUB_ENV"
+        echo BUILD_DATE=`date +%F` >> "$GITHUB_ENV"
+
+    - name: Cleanup
+      uses: rokibhasansagar/slimhub_actions@main
+
+    - name: Maximize build space
+      uses: easimon/maximize-build-space@master
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        create-symlink: true
+
+    - name: Setup zram
+      run: |
+        sudo apt install linux-modules-extra-$(uname -r) zram-tools -y
+        sudo modprobe zram
+        sudo sed -i 's/^#PERCENT=50/PERCENT=90/' /etc/default/zramswap
+        sudo sed -i 's/^#PRIORITY=100/PRIORITY=1000/' /etc/default/zramswap
+        sudo systemctl restart zramswap
+        zramctl
+
+    - name: Setup environment
+      run: |
+        export DEBIAN_FRONTEND=noninteractive
+        sudo apt update && sudo apt upgrade -y
+        sudo apt install repo -y
+        git config --global user.name ${{ github.actor }}
+        git config --global user.email ${{ github.actor }}@users.noreply.github.com
+
+    - name: Sync OFRP source
+      run: |
+        git clone ${{ github.event.inputs.OF_SYNC_REPO }}
+        WORKINGDIR=$(pwd)
+        cd sync
+        (while true; do echo "Syncing OFRP source..."; sleep 60; done) &
+        TIP_PID=$!
+        ./orangefox_sync.sh --branch ${{ github.event.inputs.OF_BRANCH }} --path $WORKINGDIR
+        kill $TIP_PID
+        cd $WORKINGDIR
+
+    - name: Setup device
+      run: |
+        git clone ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} device/${{ github.event.inputs.DEVICE_PATH }}
+
+    - name: Apply patches
+      run: |
+        WORKINGDIR=$(pwd)
+        cd $WORKINGDIR/bootable/recovery
+        if ls $WORKINGDIR/device/${{ github.event.inputs.DEVICE_PATH }}/patches/*.patch 1> /dev/null 2>&1; then
+            git apply --whitespace=fix --ignore-space-change --reject $WORKINGDIR/device/${{ github.event.inputs.DEVICE_PATH }}/patches/*.patch
+        fi
+        cd $WORKINGDIR
+
+    - name: Generate build info
+      run: |
+        echo -e "$BUILD_INFO" >> INFO.txt
+        echo "Change log:" >> INFO.txt
+        set +e
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+        if [ $? -eq 0 ]; then
+          git log "$LAST_TAG"..HEAD --pretty=format:"- %h-%an: %s" >> INFO.txt
+        else
+          git log --pretty=format:"- %h-%an: %s" >> INFO.txt
+        fi
+        cat INFO.txt
+      working-directory: device/${{ github.event.inputs.DEVICE_PATH }}
+
+    - name: Build OFRP
+      run: |
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export CCACHE_DIR=.ccache
+        export CCACHE_EXEC=$(command -v ccache)        
+        export CCACHE_MAXSIZE=5G
+        export USE_CCACHE=1
+        lunch twrp_${{ env.LUNCH_TARGET }}-ap2a-eng
+        (while true; do echo `date +%T` "Building OFRP..."; free -h; sleep 10; done) &
+        TIP_PID=$!
+        mka adbd ${{ github.event.inputs.BUILD_PARTITION }}image
+        mv out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.BUILD_PARTITION }}.img out/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}.img
+        mv out/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox*.zip out/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip
+        kill $TIP_PID && exit 0        
+
+    - name: Upload to Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: | 
+          out/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}.img
+          out/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip
+        name: OrangeFox-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}-${{ github.run_id }}
+        tag_name: ${{ env.BUILD_DATE }}-${{ github.run_id }}
+        body_path: device/${{ github.event.inputs.DEVICE_PATH }}/INFO.txt
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

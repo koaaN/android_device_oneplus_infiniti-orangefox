@@ -1,0 +1,555 @@
+diff --git a/data.cpp b/data.cpp
+index 7ca8d86b..471f5c9c 100755
+--- a/data.cpp
++++ b/data.cpp
+@@ -1246,6 +1246,7 @@ void DataManager::SetDefaultValues()
+   // End of the OrangeFox variables
+ 
+   mPersist.SetValue(TW_INSTALL_REBOOT_VAR, "0");
++  mPersist.SetValue(TW_INSTALL_SUPER_VAR, "0");
+   mPersist.SetValue(TW_SIGNED_ZIP_VERIFY_VAR, "0");
+   mPersist.SetValue(TW_DISABLE_FREE_SPACE_VAR, "0");
+   mPersist.SetValue(TW_FORCE_DIGEST_CHECK_VAR, "0");
+diff --git a/gui/theme/common/languages/en.xml b/gui/theme/common/languages/en.xml
+index b8a3ba3d..7b672b67 100644
+--- a/gui/theme/common/languages/en.xml
++++ b/gui/theme/common/languages/en.xml
+@@ -7,6 +7,10 @@
+ 		<!-- Font overrides - only change these if your language requires special characters -->
+ 
+ 		<!-- Partition display names -->
++		<string name="lpmake_super">Flash ROM quickly via super.img packaging</string>
++		<string name="install_took_seconds_msg">Install took {1} second(s)</string>
++		<string name="lpmake_super_success">install completed successfully!</string>
++		<string name="lpmake_super_fail">install failed!</string>
+ 		<string name="system">System</string>
+ 		<string name="system_image">System Image</string>
+ 		<string name="vendor">Vendor</string>
+diff --git a/gui/theme/extra-languages/languages/zh_CN.xml b/gui/theme/extra-languages/languages/zh_CN.xml
+index cd4100f4..e005badb 100644
+--- a/gui/theme/extra-languages/languages/zh_CN.xml
++++ b/gui/theme/extra-languages/languages/zh_CN.xml
+@@ -34,6 +34,10 @@
+ 		<!-- Font overrides - only change these if your language requires special characters -->
+ 
+ 		<!-- Partition display names -->
++		<string name="lpmake_super">通过合成super.img快速刷入ROM</string>
++		<string name="install_took_seconds_msg">安装用时 {1} 秒</string>
++		<string name="lpmake_super_success">安装成功！</string>
++		<string name="lpmake_super_fail">安装失败!</string>
+ 		<string name="system">系统</string>
+ 		<string name="system_image">System 镜像</string>
+ 		<string name="vendor">Vendor</string>
+diff --git a/gui/theme/portrait_hdpi/pages/install.xml b/gui/theme/portrait_hdpi/pages/install.xml
+index ea88792a..b2965d4b 100644
+--- a/gui/theme/portrait_hdpi/pages/install.xml
++++ b/gui/theme/portrait_hdpi/pages/install.xml
+@@ -76,6 +76,11 @@
+ 					<condition var1="tw_has_injecttwrp" var2="1"/>
+ 					<data variable="tw_inject_after_zip"/>
+ 				</listitem>
++
++				<listitem name="{@lpmake_super=Flash ROM via super.img packaging}">
++					<data variable="tw_install_super"/>
++				</listitem>
++
+ 			</listbox>
+ 
+ 			<button style="btn_raised">
+diff --git a/gui/theme/portrait_hdpi/resources/vars.xml b/gui/theme/portrait_hdpi/resources/vars.xml
+index 7dcffc29..a405c737 100644
+--- a/gui/theme/portrait_hdpi/resources/vars.xml
++++ b/gui/theme/portrait_hdpi/resources/vars.xml
+@@ -94,6 +94,7 @@
+ 		<variable name="tw_include_kernel_log" value="0"/>
+ 		<variable name="tw_include_logcat" value="0"/>
+ 		<variable name="tw_install_reboot" value="0"/>
++		<variable name="tw_install_super" value="0"/>
+ 		<variable name="needs_repack" value="0"/>
+ 		<variable name="fm_type_sort" value=""/>
+ 		<variable name="ft_backup_empty" value="0"/>
+diff --git a/twrpinstall/twinstall.cpp b/twrpinstall/twinstall.cpp
+index e621ca1e..1a7b4486 100755
+--- a/twrpinstall/twinstall.cpp
++++ b/twrpinstall/twinstall.cpp
+@@ -2,9 +2,6 @@
+ 	Copyright 2012 to 2017 bigbiff/Dees_Troy TeamWin
+ 	This file is part of TWRP/TeamWin Recovery Project.
+ 
+-	Copyright (C) 2018-2025 OrangeFox Recovery Project
+-	This file is part of the OrangeFox Recovery Project.
+-
+ 	TWRP is free software: you can redistribute it and/or modify
+ 	it under the terms of the GNU General Public License as published by
+ 	the Free Software Foundation, either version 3 of the License, or
+@@ -19,7 +16,6 @@
+ 	along with TWRP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ 
+-
+ #ifndef _GNU_SOURCE
+ #define _GNU_SOURCE
+ #endif
+@@ -31,11 +27,7 @@
+ #include <sys/mman.h>
+ #include <sys/stat.h>
+ #include <sys/wait.h>
+-#include <sys/mount.h>
+ #include <unistd.h>
+-#include <iostream>
+-#include <fstream>
+-
+ #include <string.h>
+ #include <stdio.h>
+ #include <cutils/properties.h>
+@@ -68,6 +60,8 @@ extern "C" {
+ 	#include "gui/gui.h"
+ }
+ 
++static int Process_lpmake_super(const char *path, int* wipe_cache);
++
+ #define AB_OTA "payload_properties.txt"
+ 
+ enum zip_type {
+@@ -104,6 +98,7 @@ static int Install_Theme(const char* path, ZipArchiveHandle Zip) {
+ #endif
+ }
+ 
++
+ static int Prepare_Update_Binary(const char *path, ZipArchiveHandle Zip) {
+ 	char arches[PATH_MAX];
+ 	property_get("ro.product.cpu.abilist", arches, "error");
+@@ -139,6 +134,7 @@ static int Prepare_Update_Binary(const char *path, ZipArchiveHandle Zip) {
+ 	}
+ 
+ 	// -------------- OrangeFox: start ---------------- //
++
+ 	int Fox_Ret = Fox_Prepare_Update_Binary(path, Zip);
+ 	if (Fox_Ret != INSTALL_SUCCESS) {
+ 	   return Fox_Ret;
+@@ -166,10 +162,8 @@ static int Prepare_Update_Binary(const char *path, ZipArchiveHandle Zip) {
+ 	return INSTALL_SUCCESS;
+ }
+ 
+-
+ static int Run_Update_Binary(const char *path, int* wipe_cache, zip_type ztype) {
+ 	int ret_val, pipe_fd[2], status, zip_verify;
+-	int aroma_running = 0;
+ 	char buffer[1024];
+ 	FILE* child_data;
+ 	pipe(pipe_fd);
+@@ -210,9 +204,9 @@ static int Run_Update_Binary(const char *path, int* wipe_cache, zip_type ztype)
+ 	child_data = fdopen(pipe_fd[0], "r");
+ 	while (fgets(buffer, sizeof(buffer), child_data) != NULL) {
+ 		char* command = strtok(buffer, " \n");
+-		if (command == NULL) {
+-			continue;
+-		} else if (strcmp(command, "progress") == 0) {
++		if (!command) continue;
++
++		if (strcmp(command, "progress") == 0) {
+ 			char* fraction_char = strtok(NULL, " \n");
+ 			char* seconds_char = strtok(NULL, " \n");
+ 
+@@ -230,17 +224,7 @@ static int Run_Update_Binary(const char *path, int* wipe_cache, zip_type ztype)
+ 		} else if (strcmp(command, "ui_print") == 0) {
+ 			char* display_value = strtok(NULL, "\n");
+ 	  		if (display_value) {
+-	      		     if (strcmp(display_value, "AROMA Filemanager Finished...") == 0 && (aroma_running == 1)) {
+-		  		aroma_running = 0;
+-		  		gui_changeOverlay("");
+-		  		TWFunc::copy_file(Fox_aroma_cfg, Fox_sdcard_aroma_cfg, 0644);
+-			     }
+ 	      		    gui_print("%s", display_value);
+-	      		    if (strcmp(display_value, "(c) 2013-2015 by amarullz.com") == 0 && (aroma_running == 0)) {
+-		  		aroma_running = 1;
+-		  		gui_changeOverlay("black_out");
+-		  		TWFunc::copy_file(Fox_aroma_cfg, Fox_sdcard_aroma_cfg, 0644);
+-			     }
+ 	    		}
+ 	  		else {
+ 	      			gui_print("\n");
+@@ -250,7 +234,7 @@ static int Run_Update_Binary(const char *path, int* wipe_cache, zip_type ztype)
+ 		} else if (strcmp(command, "clear_display") == 0) {
+ 			// Do nothing, not supported by TWRP
+ 		} else if (strcmp(command, "log") == 0) {
+-			printf("%s\n", strtok(NULL, "\n"));
++			char* log_msg = strtok(NULL, "\n");
+ 		} else {
+ 			LOGERR("unknown command [%s]\n", command);
+ 		}
+@@ -258,45 +242,21 @@ static int Run_Update_Binary(const char *path, int* wipe_cache, zip_type ztype)
+ 	fclose(child_data);
+ 
+ 	int waitrc = TWFunc::Wait_For_Child(pid, &status, "Updater");
+-
+-  	// Should never happen, but in case of crash or other unexpected condition
+-  	if (aroma_running == 1) {
+-      		gui_changeOverlay("");
+-    	}
+-
+-  	// if updater-script doesn't find the correct device
+-  	if (WEXITSTATUS (status) == TW_ERROR_WRONG_DEVICE) {
+-       		gui_print_color("error", "\nPossible causes of this error:\n  1. Wrong device\n  2. Wrong firmware\n  3. Corrupt zip\n  4. System not mounted\n  5. Bugged updater-script.\n\nSearch online for \"error %i\". ",
+-       			TW_ERROR_WRONG_DEVICE);
+-       		gui_print_color("error", "Check \"/tmp/recovery.log\", and look above, for the specific cause of this error.\n\n");
+-     	}
+-
+-  	if (waitrc != 0) {
+-      		set_miui_install_status(OTA_CORRUPT, false);
+-      		return INSTALL_ERROR;
+-    	}
++	if (waitrc != 0)
++		return INSTALL_ERROR;
+ 
+ 	return INSTALL_SUCCESS;
+ }
+ 
+-int TWinstall_zip(const char *path, int *wipe_cache, bool check_for_digest)
+-{
+-  int ret_val, zip_verify = 1, unmount_system = 1, reflashtwrp = 0, unmount_vendor = 1;
+-  bool run_rom_scripts = false;
++bool isUpdatePkg(ZipArchiveHandle Zip) {
++	std::string update_binary_name(UPDATE_BINARY_NAME);
++	ZipEntry64 update_binary_entry;
++	return (FindEntry(Zip, update_binary_name, &update_binary_entry) == 0);
++}
+ 
+-  if (strcmp(path, "error") == 0)
+-    {
+-      LOGERR("Failed to get adb sideload file: '%s'\n", path);
+-      return INSTALL_CORRUPT;
+-    }
++int TWinstall_zip(const char* path, int* wipe_cache, bool check_for_digest) {
++	int ret_val, zip_verify = 1, unmount_system = 1, reflashtwrp = 0;
+ 
+-  if (DataManager::GetIntValue(FOX_INSTALL_PREBUILT_ZIP) == 1)
+-     {
+-         DataManager::SetValue(FOX_ZIP_INSTALLER_CODE, 0); // internal zip = standard zip installer
+-         DataManager::SetValue(FOX_ZIP_INSTALLER_TREBLE, 0);
+-     }    
+-  else   
+-    {
+ 	gui_msg(Msg("installing_zip=Installing zip file '{1}'")(path));
+ 	if (strlen(path) < 9 || strncmp(path, "/sideload", 9) != 0) {
+ 		string digest_str;
+@@ -310,22 +270,35 @@ int TWinstall_zip(const char *path, int *wipe_cache, bool check_for_digest)
+ 			}
+ 		}
+ 	}
+-    }
+ 
+-  DataManager::GetValue(TW_UNMOUNT_SYSTEM, unmount_system);
+-  DataManager::GetValue(TW_UNMOUNT_VENDOR, unmount_vendor);
++	DataManager::GetValue(TW_UNMOUNT_SYSTEM, unmount_system);
+ 
+ #ifndef TW_OEM_BUILD
+-  DataManager::GetValue(TW_SIGNED_ZIP_VERIFY_VAR, zip_verify);
++	DataManager::GetValue(TW_SIGNED_ZIP_VERIFY_VAR, zip_verify);
+ #endif
+-
+-  DataManager::SetProgress(0);
++	DataManager::SetProgress(0);
+ 
+ 	auto package = Package::CreateMemoryPackage(path);
+ 	if (!package) {
+ 		return INSTALL_CORRUPT;
+ 	}
+ 
++	int lpmake_super_mode = 0;
++	DataManager::GetValue("tw_install_super", lpmake_super_mode);
++	if (lpmake_super_mode) {
++		LOGINFO("lpmake_super mode activated - calling /system/bin/flashtool.sh\n");
++		time_t start, stop;
++		time(&start);
++		ret_val = Process_lpmake_super(path, wipe_cache);
++		time(&stop);
++		int total_time = (int) difftime(stop, start);
++		if (ret_val == INSTALL_SUCCESS) {
++			LOGINFO("lpmake_super install via flashtool.sh took %i second(s).\n", total_time);
++			gui_msg(Msg(msg::kHighlight, "install_took_seconds_msg=Install took {1} second(s).")(total_time));
++		}
++		return ret_val;
++	}
++
+ 	if (zip_verify) {
+ 		gui_msg("verify_zip_sig=Verifying zip signature...");
+ 		static constexpr const char* CERTIFICATE_ZIP_FILE = "/system/etc/security/otacerts.zip";
+@@ -357,69 +330,32 @@ int TWinstall_zip(const char *path, int *wipe_cache, bool check_for_digest)
+     }
+ 
+     if (unmount_system) {
+-	if (PartitionManager.Is_Mounted_By_Path(PartitionManager.Get_Android_Root_Path())) {
+ 		gui_msg("unmount_system=Unmounting System...");
+-		if (PartitionManager.UnMount_By_Path(PartitionManager.Get_Android_Root_Path(), false)) {
+-			//unlink(PartitionManager.Get_Android_Root_Path().c_str());
+-			//mkdir(PartitionManager.Get_Android_Root_Path().c_str(), 0755);
+-		}
+-		else {
++		if(!PartitionManager.UnMount_By_Path(PartitionManager.Get_Android_Root_Path(), true)) {
+ 			gui_msg("unmount_system_err=Failed to unmount System");
+-		        return -1;
+-		}
+-	}
+-   }
+-
+-   if (unmount_vendor) {
+-	if (PartitionManager.Is_Mounted_By_Path("/vendor")) {
+-		gui_msg("unmount_vendor=Unmounting Vendor...");
+-		if (PartitionManager.UnMount_By_Path("/vendor", false)) {
+-		   	//unlink("/vendor");
+-		   	//mkdir("/vendor", 0755);
+-		} else {
+-			gui_msg("unmount_vendor_err=Failed to unmount Vendor");
+-			return -1;
++	        return -1;
+ 		}
+-	}
++		unlink("/system");
++		mkdir("/system", 0755);
+    }
+ 
+-   // DJ9, 20200622: try to avoid a situation where blockimg will bomb out when trying to create a stash
+-   if (TWFunc::Path_Exists("/cache/.") && !TWFunc::Path_Exists("/cache/recovery/.") && !TWFunc::Path_Exists("/data/cache/.")) {
+-	LOGINFO("Recreating the /cache/recovery/ folder ...\n");
+-	if (!TWFunc::Recursive_Mkdir("/cache/recovery", false))
+-	   LOGERR("Could not create /cache/recovery - blockimg may have problems with creating stashes\n");
+-   }
+-   // DJ9
++	time_t start, stop;
++	time(&start);
+ 
+-  time_t start, stop;
+-  time(&start);
+-
+-  std::string update_binary_name(UPDATE_BINARY_NAME);
+-  ZipEntry64 update_binary_entry;
+-  if (FindEntry(Zip, update_binary_name, &update_binary_entry) == 0) {
++	std::string update_binary_name(UPDATE_BINARY_NAME);
++	ZipEntry64 update_binary_entry;
++	if (FindEntry(Zip, update_binary_name, &update_binary_entry) == 0) {
+ 		LOGINFO("Update binary zip\n");
+ 		// Additionally verify the compatibility of the package.
+ 		if (!Fox_Skip_Treble_Compatibility_Check() && !verify_package_compatibility(Zip)) {
+ 			gui_err("zip_compatible_err=Zip Treble compatibility error!");
+ 			ret_val = INSTALL_CORRUPT;
+ 		} else {
++
+ 			ret_val = Prepare_Update_Binary(path, Zip);
+ 			if (ret_val == INSTALL_SUCCESS) {
+ 				usleep(32);
+-				run_rom_scripts = ((DataManager::GetIntValue(FOX_ZIP_INSTALLER_CODE) != 0) // only run after flashing a ROM
+-	  			&& (DataManager::GetIntValue(FOX_INSTALL_PREBUILT_ZIP) != 1)); // don't run for built-in zips
+-
+-				if (run_rom_scripts && TWFunc::Path_Exists(FOX_PRE_ROM_FLASH_SCRIPT)) {
+-					TWFunc::RunFoxScript(FOX_PRE_ROM_FLASH_SCRIPT, path);
+-	  			}
+-
+ 				ret_val = Run_Update_Binary(path, wipe_cache, UPDATE_BINARY_ZIP_TYPE);
+-
+-				if (DataManager::GetIntValue("fox_processing_asserts") != 0) {
+-					TWFunc::Fox_Property_Set("ro.product.device", DataManager::GetStrValue("fox_product_device"));
+-					DataManager::SetValue("fox_processing_asserts", "0");
+-					LOGINFO("\nDevice code name restored\n");
+-				}
+ 			}
+ 		}
+ 	} else {
+@@ -436,15 +372,7 @@ int TWinstall_zip(const char *path, int *wipe_cache, bool check_for_digest)
+ 			TWFunc::copy_file("/system/bin/sh", "/tmp/sh", 0755);
+ 			mount("/tmp/sh", "/system/bin/sh", "auto", MS_BIND, NULL);
+ 
+-			run_rom_scripts = true;
+ 			usleep(32);
+-
+-			if (run_rom_scripts && TWFunc::Path_Exists(FOX_PRE_ROM_FLASH_SCRIPT)) {
+-				TWFunc::RunFoxScript(FOX_PRE_ROM_FLASH_SCRIPT, path);
+-			}
+-
+-			TWFunc::IsRecoveryOverwritten(true);
+-
+ 			ret_val = Run_Update_Binary(path, wipe_cache, AB_OTA_ZIP_TYPE);
+ 
+ 			DataManager::SetValue(FOX_ZIP_INSTALLER_CODE, 1); // mark as custom ROM install
+@@ -471,80 +399,100 @@ int TWinstall_zip(const char *path, int *wipe_cache, bool check_for_digest)
+ 				ret_val = INSTALL_CORRUPT;
+ 			}
+ 		}
+-   }
+-
+-  time(&stop);
+-  int total_time = (int) difftime(stop, start);
++   }
++	time(&stop);
++	int total_time = (int) difftime(stop, start);
+ 
+-  if (ret_val == INSTALL_CORRUPT)
+-    {
++	if (ret_val == INSTALL_CORRUPT) {
+         set_miui_install_status(OTA_CORRUPT, true);
+         gui_err("invalid_zip_format=Invalid zip file format!");
+-    }
+-  else
+-  if (ret_val == INSTALL_ERROR)
+-     {
+-	set_miui_install_status(OTA_ERROR, false);
+-     }
+-  else // success - so let us see whether we need to run OTA_BAK
+-  {
+-     // if MIUI-specific features have been disabled
+-     if (Fox_Skip_OTA()) // yes
+-     {
+-         //LOGINFO("OrangeFox: not running the incremental OTA backup (OTA_BAK).\n");
+-     }  
+-     else // else let us proceed with the OTA stuff
+-     if (DataManager::GetIntValue(FOX_INCREMENTAL_OTA_FAIL) != 1)
+-     {
+-      	if (DataManager::GetIntValue(FOX_INCREMENTAL_PACKAGE) == 1 && DataManager::GetIntValue(FOX_ZIP_INSTALLER_CODE) != 0)
+-      	  {
+-      	    if (TWinstall_Run_OTA_BAK (true)) // true, because the value of Fox_Zip_Installer_Code to be set
+-      	      {
+-	        if (Fox_OTA_Backup_Stock_Boot_Image()) // whether to create an additional backup of the stock boot image
+-	           {
+-	      		usleep(2048);
+-	      		string ota_folder = DataManager::GetStrValue("ota_bak_folder");
+-	      		usleep(2048);
+-	      		if (ota_folder.empty())
+-	      		   ota_folder = FOX_OTA_PATH;
+-			string ota_bootimg = ota_folder + "/boot.img";
+-			if (TWFunc::Path_Exists(boot_bak_img)) {
+-			   if (TWFunc::copy_file(boot_bak_img, ota_bootimg, 0644) == 0) {
+-			   	LOGINFO("OrangeFox: stock boot image extracted into the OTA directory.\n");
+-			     }
+-			   unlink(boot_bak_img.c_str());
+-		 	}
+-	           }
+-      	      }
+-      	  }
+-
+-      	DataManager::SetValue(FOX_METADATA_PRE_BUILD, 0);
+-      	DataManager::SetValue(FOX_MIUI_ZIP_TMP, 0);
+-      	DataManager::SetValue(FOX_INCREMENTAL_OTA_FAIL, 0);
+-      	DataManager::SetValue(FOX_LOADED_FINGERPRINT, 0);
+-      	DataManager::SetValue(FOX_RUN_SURVIVAL_BACKUP, 0);
+-      
+-     } // end of OTA stuff
+-    LOGINFO("Install took %i second(s).\n", total_time);
+-   }
++    } else if (ret_val == INSTALL_ERROR) {
++		set_miui_install_status(OTA_ERROR, false);
++    } else {
++		LOGINFO("Install took %i second(s).\n", total_time);
++	}
+ 
+-   if (ret_val == INSTALL_SUCCESS)
+-      set_miui_install_status(OTA_SUCCESS, false);
++	if (ret_val == INSTALL_SUCCESS)
++		gui_msg(Msg(msg::kHighlight, "install_took_seconds_msg=Install took {1} second(s).")(total_time));
+ 
+-   usleep(32);
+-   if (DataManager::GetIntValue(FOX_ZIP_INSTALLER_CODE) != 0) // just flashed a ROM
+-   {
+-      usleep(16);
+-      TWFunc::Check_OrangeFox_Overwrite_FromROM(false, path);
+-   }
++	bool _isUpdatePkg = isUpdatePkg(Zip);
++	if (_isUpdatePkg && ret_val == INSTALL_SUCCESS) {
++		if (DataManager::GetIntValue(TW_AUTO_DISABLE_AVB2_VAR))
++			PartitionManager.Disable_AVB2(true);
++	}
+ 
+-   if (run_rom_scripts && TWFunc::Path_Exists(FOX_POST_ROM_FLASH_SCRIPT)) {
+-   	usleep(2048);
+-   	TWFunc::RunFoxScript(FOX_POST_ROM_FLASH_SCRIPT, path);
+-   	sleep(1);
+-   	DataManager::SetValue("found_fox_overwriting_rom", "0");
+-   	TWFunc::Fox_Property_Set("found_fox_overwriting_rom", "");
+-   }
++	return ret_val;
++}
++
++static int Process_lpmake_super(const char *path, int* wipe_cache) {
++	(void)wipe_cache;
++	int ret_val = INSTALL_SUCCESS;
++	char command[PATH_MAX];
++	int pipe_fd[2];
++	FILE* child_data;
++	char buffer[1024];
++
++	if (pipe(pipe_fd) != 0) {
++		LOGERR("Failed to create pipe for flashtool.sh: %s\n", strerror(errno));
++		return INSTALL_ERROR;
++	}
+ 
+-  return ret_val;
++	snprintf(command, sizeof(command), "/system/bin/flashtool.sh \"%s\" 0 0 %d", path, pipe_fd[1]);
++	LOGINFO("Executing flashtool command: %s\n", command);
++
++	pid_t pid = fork();
++	if (pid == 0) {
++		close(pipe_fd[0]);
++		execl("/system/bin/sh", "sh", "-c", command, (char*)NULL);
++		LOGERR("Failed to execute flashtool.sh: %s\n", strerror(errno));
++		_exit(INSTALL_ERROR);
++	} else if (pid < 0) {
++		LOGERR("Failed to fork process for flashtool.sh: %s\n", strerror(errno));
++		close(pipe_fd[0]);
++		close(pipe_fd[1]);
++		return INSTALL_ERROR;
++	}
++
++	close(pipe_fd[1]);
++	child_data = fdopen(pipe_fd[0], "r");
++	if (!child_data) {
++		LOGERR("Failed to open pipe for reading: %s\n", strerror(errno));
++		close(pipe_fd[0]);
++		waitpid(pid, NULL, 0);
++		return INSTALL_ERROR;
++	}
++
++	while (fgets(buffer, sizeof(buffer), child_data) != NULL) {
++		char* cmd = strtok(buffer, " \n");
++		if (!cmd) continue;
++
++		if (strcmp(cmd, "progress") == 0) {
++			char* fraction_str = strtok(NULL, " \n");
++			char* seconds_str = strtok(NULL, " \n");
++			if (fraction_str && seconds_str) {
++				float fraction = strtof(fraction_str, NULL);
++				int seconds = strtol(seconds_str, NULL, 10);
++				DataManager::ShowProgress(fraction, seconds);
++			}
++		}
++		else if (strcmp(cmd, "ui_print") == 0) {
++			char* msg = strtok(NULL, "\n");
++			if (msg) gui_print("%s", msg);
++			else gui_print("\n");
++		}
++	}
++
++	int status;
++	waitpid(pid, &status, 0);
++	fclose(child_data);
++
++	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
++		LOGERR("flashtool.sh execution failed (exit code: %d)\n", WEXITSTATUS(status));
++		gui_err("lpmake_super_fail=install failed!");
++		ret_val = INSTALL_ERROR;
++	} else {
++		gui_msg("lpmake_super_success=install completed successfully!");
++	}
++	DataManager::SetValue("tw_install_super", 0);
++	return ret_val;
+ }
+diff --git a/variables.h b/variables.h
+index 75f67683..33eb0990 100644
+--- a/variables.h
++++ b/variables.h
+@@ -233,6 +233,7 @@ static int Fox_Current_ROM_IsMIUI = 0; // is the currently installed ROM a MIUI
+ #define TW_SKIP_DIGEST_GENERATE_VAR "tw_skip_digest_generate"
+ #define TW_SIGNED_ZIP_VERIFY_VAR    "tw_signed_zip_verify"
+ #define TW_INSTALL_REBOOT_VAR       "tw_install_reboot"
++#define TW_INSTALL_SUPER_VAR        "tw_install_super"
+ #define TW_TIME_ZONE_VAR            "tw_time_zone"
+ #define TW_RM_RF_VAR                "tw_rm_rf"
+ 
